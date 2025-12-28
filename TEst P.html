@@ -1,86 +1,148 @@
-<style>
-    /* ส่วนเดิมของคุณที่มีอยู่... */
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ค้นหาหนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</title>
     
-    .button-group { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
-    .btn-print { background-color: #2e7d32; }
-    .btn-print:hover { background-color: #1b5e20; }
-
-    /* CSS สำหรับการพิมพ์ (Print Mode) */
-    @media print {
-        body * { visibility: hidden; }
-        #resultOutput, #resultOutput * { visibility: visible; }
-        #resultOutput { position: absolute; left: 0; top: 0; width: 100%; }
-        .btn-print, .input-group, h1, #status-message { display: none !important; }
-        .tawi50-form { border: 1px solid #000; }
-    }
-</style>
-
-<script>
-// --- แก้ไข COL_END_IDX เป็น 15 เพื่อครอบคลุมถึงคอลัมน์ P ---
-const COL_START_IDX = 1; 
-const COL_END_IDX = 15; 
-
-function searchTawi50() {
-    const rawInput = document.getElementById('taxIdInput').value.trim();
-    const taxId = rawInput.replace(/[^0-9]/g, ''); 
-    resultOutput.innerHTML = ''; 
-
-    if (tawi50Data.length === 0) {
-        resultOutput.innerHTML = '<p class="status-error">ยังไม่มีข้อมูลในระบบ กรุณารอสักครู่</p>';
-        return;
-    }
-
-    if (taxId.length !== 13) {
-        resultOutput.innerHTML = '<p class="status-error">กรุณากรอกเลขประจำตัวผู้เสียภาษีอากร 13 หลักให้ถูกต้อง</p>';
-        return;
-    }
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
-    const foundData = tawi50Data.find(item => 
-        String(item[taxIdKeyName]).trim().replace(/[^0-9]/g, '') === taxId
-    );
+    <style>
+        body { font-family: Tahoma, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 40px auto; padding: 30px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 15px rgba(0, 0, 0, 0.2); }
+        h1 { color: #880e4f; text-align: center; border-bottom: 2px solid #c2185b; padding-bottom: 10px; }
+        
+        .input-group { display: flex; gap: 10px; margin-top: 20px; }
+        input[type="text"] { flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        button { padding: 12px 20px; background-color: #880e4f; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #5d0737; }
 
-    if (foundData) {
-        let html = '<div class="tawi50-form">';
-        html += '<h3>หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h3>';
-        html += '<table><tbody>';
+        #status-message { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; }
+        .status-success { background-color: #e8f5e9; color: #388e3c; }
+        .status-error { background-color: #ffcdd2; color: #d32f2f; }
+        .status-loading { background-color: #fff3e0; color: #ff9800; }
 
-        // กำหนดรายการและลำดับการแสดงผล
-        const displayFields = [
-            { label: 'เลขประจำตัวผู้เสียภาษี (ผู้มีเงินได้)', key: taxIdKeyName },
-            { label: 'ชื่อ - นามสกุล', key: 'ชื่อ - นามสกุล' },
-            { label: 'ที่อยู่', key: 'ที่อยู่' },
-            { label: 'ประเภทภาษีเงินได้', key: 'ประเภทภาษีเงินได้' }, // เพิ่มรายการนี้
-            { label: 'จำนวนเงินที่จ่าย', key: Object.keys(foundData).find(k => k.includes('จำนวนเงินที่จ่าย')) },
-            { label: 'ภาษีหักและนำส่งไว้', key: Object.keys(foundData).find(k => k.includes('ภาษีหักและนำส่งไว้')) },
-            { label: 'ปีภาษีที่จ่ายเงินได้', key: Object.keys(foundData).find(k => k.includes('ปีภาษีที่จ่ายเงินได้')) },
-            { label: 'วันที่มีการจ่ายเงิน/ออกเอกสาร', key: Object.keys(foundData).find(k => k.includes('วันที่ออกหนังสือรับรอง')) },
-            { label: 'ผู้จ่ายเงินได้', key: 'ชื่อบริษัทที่มีหน้าที่หักภาษี ณ ที่จ่าย' },
-            { label: 'เลขประจำตัวผู้เสียภาษี (ผู้จ่ายเงิน)', key: Object.keys(foundData).find(k => k.includes('เลขประจำตัวผู้เสียภาษี บริษัท')) }
-        ];
+        .tawi50-form { border: 3px solid #880e4f; padding: 25px; margin-top: 25px; border-radius: 6px; background-color: #ffffff; }
+        .tawi50-form h3 { text-align: center; color: #880e4f; margin-top: 0; border-bottom: 1px solid #c2185b; padding-bottom: 10px; }
+        .tawi50-form table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .tawi50-form th, .tawi50-form td { border: 1px solid #ddd; padding: 12px; text-align: left; font-size: 14px; }
+        .tawi50-form th { background-color: #f8e5ed; color: #880e4f; width: 35%; }
+        
+        .button-group { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+        .btn-print { background-color: #2e7d32; width: 100%; font-size: 16px; padding: 15px; }
 
-        displayFields.forEach(field => {
-            let value = foundData[field.key] || '-';
-            
-            // จัดรูปแบบตัวเลขยอดเงิน
-            if (field.label.includes('เงิน') || field.label.includes('ภาษี')) {
-                const num = parseFloat(String(value).replace(/,/g, ''));
-                if (!isNaN(num)) {
-                    value = `<strong>${num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> บาท`;
-                }
+        /* การตั้งค่าสำหรับการพิมพ์ */
+        @media print {
+            body * { visibility: hidden; }
+            #resultOutput, #resultOutput * { visibility: visible; }
+            #resultOutput { position: absolute; left: 0; top: 0; width: 100%; }
+            .btn-print, .input-group, h1, #status-message { display: none !important; }
+            .tawi50-form { border: 1px solid #000; }
+        }
+    </style>
+</head>
+<body onload="initialize()">
+
+    <div class="container">
+        <h1>ค้นหาหนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h1>
+        
+        <div id="status-message" class="status-loading">กำลังโหลดข้อมูลจากระบบ...</div>
+
+        <div class="input-group">
+            <input type="text" id="taxIdInput" placeholder="กรุณากรอก เลขประจำตัวผู้เสียภาษีอากร 13 หลัก" maxlength="13">
+            <button onclick="searchTawi50()">ค้นหาข้อมูล</button>
+        </div>
+
+        <div id="resultOutput"></div>
+    </div>
+
+    <script>
+        // *** 1. ลิงก์จาก Google Sheets ของคุณ (ต้อง Publish as CSV) ***
+        const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1rpXCyMHEyLmkyZsx1JjMB81kMFeBeNBtcwfhpeiMUpE/export?format=csv&gid=0';
+        
+        let tawi50Data = [];
+        let taxIdKeyName = 'เลขประจำตัวผู้เสียภาษีอากร';
+
+        // ฟังก์ชันเริ่มต้นดึงข้อมูล
+        async function initialize() {
+            const statusMessage = document.getElementById('status-message');
+            try {
+                const response = await fetch(GOOGLE_SHEET_CSV_URL, { cache: 'no-cache' });
+                if (!response.ok) throw new Error('ไม่สามารถเข้าถึงข้อมูลได้');
+                const csvText = await response.text();
+                
+                const workbook = XLSX.read(csvText, { type: 'string' });
+                const sheetAOA = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                
+                const headerRow = sheetAOA[4]; // แถวที่ 5
+                const dataRows = sheetAOA.slice(5);
+                
+                tawi50Data = dataRows.map(row => {
+                    let obj = {};
+                    headerRow.forEach((key, i) => { if(key) obj[key.trim()] = row[i]; });
+                    return obj;
+                }).filter(item => {
+                    const id = String(item[taxIdKeyName] || '').replace(/[^0-9]/g, '');
+                    return id.length === 13;
+                });
+
+                statusMessage.className = 'status-success';
+                statusMessage.innerHTML = `✅ เชื่อมต่อข้อมูลสำเร็จ! พร้อมให้บริการแล้ว`;
+            } catch (error) {
+                statusMessage.className = 'status-error';
+                statusMessage.innerHTML = '❌ โหลดข้อมูลไม่สำเร็จ: ' + error.message;
             }
-            html += `<tr><th>${field.label}</th><td>${value}</td></tr>`;
-        });
+        }
 
-        html += '</tbody></table></div>';
-        
-        // เพิ่มปุ่มพิมพ์ใต้ตาราง
-        html += `<div class="button-group">
-                    <button class="btn-print" onclick="window.print()">พิมพ์เอกสาร หรือ บันทึกเป็น PDF</button>
-                 </div>`;
-        
-        resultOutput.innerHTML = html;
-    } else {
-        resultOutput.innerHTML = '<p class="status-error">❌ ไม่พบข้อมูลสำหรับเลขประจำตัวนี้</p>';
-    }
-}
-</script>
+        function searchTawi50() {
+            const rawInput = document.getElementById('taxIdInput').value.trim();
+            const taxId = rawInput.replace(/[^0-9]/g, '');
+            const resultOutput = document.getElementById('resultOutput');
+            resultOutput.innerHTML = '';
+
+            if (taxId.length !== 13) {
+                alert("กรุณากรอกเลข 13 หลักให้ถูกต้อง");
+                return;
+            }
+
+            const foundData = tawi50Data.find(item => 
+                String(item[taxIdKeyName]).replace(/[^0-9]/g, '') === taxId
+            );
+
+            if (foundData) {
+                let html = '<div class="tawi50-form">';
+                html += '<h3>หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h3>';
+                html += '<table><tbody>';
+
+                const displayFields = [
+                    { label: 'เลขประจำตัวผู้เสียภาษี (พนักงาน)', key: taxIdKeyName },
+                    { label: 'ชื่อ - นามสกุล', key: 'ชื่อ - นามสกุล' },
+                    { label: 'ที่อยู่', key: 'ที่อยู่' },
+                    { label: 'ประเภทภาษีเงินได้', key: 'ประเภทภาษีเงินได้' },
+                    { label: 'จำนวนเงินที่จ่าย', key: Object.keys(foundData).find(k => k.includes('จำนวนเงินที่จ่าย')) },
+                    { label: 'ภาษีหักและนำส่งไว้', key: Object.keys(foundData).find(k => k.includes('ภาษีหักและนำส่งไว้')) },
+                    { label: 'ปีภาษีที่จ่ายเงินได้', key: Object.keys(foundData).find(k => k.includes('ปีภาษีที่จ่ายเงินได้')) },
+                    { label: 'ผู้จ่ายเงินได้', key: 'ชื่อบริษัทที่มีหน้าที่หักภาษี ณ ที่จ่าย' }
+                ];
+
+                displayFields.forEach(field => {
+                    let value = foundData[field.key] || '-';
+                    if (field.label.includes('เงิน') || field.label.includes('ภาษีหัก')) {
+                        const num = parseFloat(String(value).replace(/,/g, ''));
+                        if (!isNaN(num)) {
+                            value = `<strong>${num.toLocaleString('th-TH', {minimumFractionDigits: 2})}</strong> บาท`;
+                        }
+                    }
+                    html += `<tr><th>${field.label}</th><td>${value}</td></tr>`;
+                });
+
+                html += '</tbody></table>';
+                html += `<div class="button-group"><button class="btn-print" onclick="window.print()">พิมพ์เอกสาร หรือ บันทึกเป็น PDF</button></div></div>`;
+                resultOutput.innerHTML = html;
+            } else {
+                resultOutput.innerHTML = '<p class="status-error">❌ ไม่พบข้อมูลสำหรับเลขประจำตัวนี้</p>';
+            }
+        }
+    </script>
+</body>
+</html>
